@@ -85,18 +85,33 @@ module Neo4j
       end
 
       def hash_value_as_object(value, session)
-        data =  case
-                when transaction_response?
-                  add_transaction_entity_id
-                  mapped_rest_data
-                when value[:labels] || value[:type]
-                  add_entity_id(value)
-                  value
-                else
-                  return value
-                end
+        resolve_class(value, session)
+      end
+
+      def resolve_class(value, session)
+        obj_data = transaction_response? ? mapped_rest_data : value
+        return basic_wrap(value, session) if unwrapped? || !module_wrap?(obj_data)
+        model = Neo4j::Server::NodeModule::LABEL_MAP[obj_data[:metadata][:labels]]
+        model.new.module_init(obj_data[:metadata][:id], obj_data[:data], obj_data[:metadata][:labels])
+      end
+
+      def basic_wrap(value, session)
+        data = case
+               when transaction_response?
+                 add_transaction_entity_id
+                 mapped_rest_data
+               when value[:labels] || value[:type]
+                 add_entity_id(value)
+                 value
+               else
+                 return value
+               end
         basic_obj = (node?(value) ? CypherNode : CypherRelationship).new(session, data)
         unwrapped? ? basic_obj : basic_obj.wrapper
+      end
+
+      def module_wrap?(obj_data)
+        obj_data[:metadata] && Neo4j::Server::NodeModule::LABEL_MAP[obj_data[:metadata][:labels]]
       end
 
       def looks_like_an_object?(value)
@@ -139,7 +154,6 @@ module Neo4j
       def first_data
         if @uncommited
           @data.first[:row].first
-          # data.is_a?(Hash) ? {'data' => data, 'id' => id} : data
         else
           data = @data[0][0]
           data.is_a?(Hash) ? add_entity_id(data) : data

@@ -132,9 +132,9 @@ module Neo4j
 
     # Same as #other_node but can return a none wrapped node
     def _other_node(node)
-      if node == _start_node
+      if node.neo_id == _start_node.neo_id
         _end_node
-      elsif node == _end_node
+      elsif node.neo_id == _end_node.neo_id
         _start_node
       else
         fail "Node #{node.inspect} is neither start nor end node"
