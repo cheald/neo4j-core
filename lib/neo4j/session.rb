@@ -1,8 +1,11 @@
+require 'thread'
+
 module Neo4j
   class Session
     @@current_session = nil
     @@all_sessions = {}
     @@factories = {}
+    @@mutex = Mutex.new
 
     # @abstract
     def close
@@ -114,15 +117,23 @@ module Neo4j
 
       # @private
       def create_session(db_type, endpoint_url, params = {})
-        unless @@factories[db_type]
-          fail InitializationError, "Can't connect to database '#{db_type}', available #{@@factories.keys.join(',')}"
-        end
-        @@factories[db_type].call(endpoint_url, params)
+        factory_for(db_type).call(endpoint_url, params)
+      end
+
+      def factory_for(type)
+        @@mutex.synchronize {
+          unless @@factories[type]
+            fail InitializationError, "Can't connect to database '#{type}', available #{@@factories.keys.join(',')}"
+          end
+          @@factories[type]
+        }
       end
 
       # @return [Neo4j::Session] the current session
       def current
-        @@current_session
+        @@mutex.synchronize {
+          @@current_session
+        }
       end
 
       # Returns the current session or raise an exception if no session is available
@@ -138,13 +149,17 @@ module Neo4j
 
       # Returns a session with given name or else raise an exception
       def named(name)
-        @@all_sessions[name] || fail("No session named #{name}.")
+        @@mutex.synchronize {
+          @@all_sessions[name] || fail("No session named #{name}.")
+        }
       end
 
       # Sets the session to be used as default
       # @param [Neo4j::Session] session the session to use
       def set_current(session)
-        @@current_session = session
+        @@mutex.synchronize {
+          @@current_session = session
+        }
       end
 
       # Registers a callback which will be called immediately if session is already available,
@@ -158,18 +173,20 @@ module Neo4j
       end
 
       def user_agent_string
-        gem, version = if defined?(::Neo4j::ActiveNode)
+        gem_name, version = if defined?(::Neo4j::ActiveNode)
                          ['neo4j', ::Neo4j::VERSION]
                        else
                          ['neo4j-core', ::Neo4j::Core::VERSION]
                        end
 
 
-        "#{gem}-gem/#{version} (https://github.com/neo4jrb/#{gem})"
+        "#{gem_name}-gem_name/#{version} (https://github.com/neo4jrb/#{gem_name})"
       end
 
       def clear_listeners
-        @@listeners = []
+        @@mutex.synchronize {
+          @@listeners.clear
+        }
       end
 
       # @private
@@ -179,8 +196,9 @@ module Neo4j
 
       # @private
       def _listeners
-        @@listeners ||= []
-        @@listeners
+        @@mutex.synchronize {
+          @@listeners ||= []
+        }
       end
 
       # @private
@@ -193,9 +211,12 @@ module Neo4j
         if default == true
           set_current(session)
         elsif default.nil?
-          set_current(session) unless @@current_session
+          set_current(session) unless current
         end
-        @@all_sessions[name] = session if name
+
+        @@mutex.synchronize {
+          @@all_sessions[name] = session if name
+        }
         session
       end
 
@@ -205,13 +226,17 @@ module Neo4j
       end
 
       def inspect
-        "Neo4j::Session available: #{@@factories && @@factories.keys}"
+        @@mutex.synchronize {
+          "Neo4j::Session available: #{@@factories && @@factories.keys}"
+        }
       end
 
       # @private
       def register_db(db, &session_factory)
-        puts "replace factory for #{db}" if @@factories[db]
-        @@factories[db] = session_factory
+        @@mutex.synchronize {
+          puts "replace factory for #{db}" if @@factories[db]
+          @@factories[db] = session_factory
+        }
       end
     end
   end
