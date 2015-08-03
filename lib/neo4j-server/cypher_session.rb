@@ -28,12 +28,14 @@ module Neo4j
         conn = Faraday.new(url, init_params) do |b|
           b.request :basic_auth, params[:basic_auth][:username], params[:basic_auth][:password] if params[:basic_auth]
           b.request :multi_json
-          # b.response :logger
 
           b.response :multi_json, symbolize_keys: true, content_type: 'application/json'
-          # b.use Faraday::Response::RaiseError
-          b.use Faraday::Adapter::NetHttpPersistent
-          # b.adapter  Faraday.default_adapter
+          if RUBY_PLATFORM == 'java'
+            require 'faraday/adapter/manticore'
+            b.adapter :manticore
+          else
+            b.use Faraday::Adapter::NetHttpPersistent
+          end
         end
         conn.headers = {'Content-Type' => 'application/json', 'User-Agent' => ::Neo4j::Session.user_agent_string}
         conn
