@@ -32,7 +32,7 @@ module Neo4j
           b.response :multi_json, symbolize_keys: true, content_type: 'application/json'
           if RUBY_PLATFORM == 'java'
             require 'faraday/adapter/manticore'
-            b.adapter :manticore
+            b.adapter :manticore, retry_non_idempotent: true
           else
             b.use Faraday::Adapter::NetHttpPersistent
           end
